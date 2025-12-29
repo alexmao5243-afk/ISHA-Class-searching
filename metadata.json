@@ -1,0 +1,7 @@
+{
+  "name": "ISHA 課程檢索助手",
+  "description": "提供中華民國工業安全衛生協會 (ISHA) 的專業職訓課程檢索服務，支持日期、城市及課程類別篩選，並能自動查找最近的職訓中心。",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

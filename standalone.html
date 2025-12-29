@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISHA 課程檢索系統 (獨立版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Babel for in-browser compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f4f7f9;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "@google/genai": "https://esm.sh/@google/genai@0.1.1" 
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
+        import React, { useState, useEffect } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { GoogleGenAI, Type } from '@google/genai';
+
+        // ==========================================
+        // CONFIGURATION
+        // ==========================================
+        // 請在此處填入您的 API Key
+        const API_KEY = "YOUR_API_KEY"; 
+
+        // ==========================================
+        // CONSTANTS
+        // ==========================================
+        const CITIES = [
+          "臺北市", "新北市", "桃園市", "臺中市", "臺南市", "高雄市",
+          "基隆市", "新竹市", "新竹縣", "苗栗縣", "彰化縣", "南投縣",
+          "雲林縣", "嘉義市", "嘉義縣", "屏東縣", "宜蘭縣", "花蓮縣",
+          "臺東縣", "澎湖縣", "金門縣", "連江縣"
+        ];
+
+        const COURSE_CATEGORIES = [
+          "職業安全衛生管理人員 (甲乙丙種)",
+          "營造業職業安全衛生業務主管",
+          "危險性機械及設備操作人員 (天車、堆高機、鍋爐)",
+          "施工架組配/模板支撐/土石支撐作業主管",
+          "急救人員訓練",
+          "防火管理人員訓練",
+          "特定化學物質/有機溶劑作業主管",
+          "粉塵/缺氧作業主管",
+          "露天開挖/隧道挖掘作業主管",
+          "物理性因子作業環境監測",
+          "化學性因子作業環境監測",
+          "一般勞工安全衛生教育訓練",
+          "其他"
+        ];
+
+        const SAFETY_FACTS = [
+          "雇主應對勞工應施以從事工作及預防災變所必要之安全衛生教育及訓練。",
+          "勞工對於安全衛生之設施，應確實遵守，不得任意移動、變更或毀損。",
+          "從事高空作業時，勞工應確實配戴安全帶，並固定於穩固之處。",
+          "進入局限空間作業前，應先實施通風換氣，並測定氧氣及危險氣體濃度。",
+          "使用移動式起重機進行吊掛作業時，嚴禁人員進入吊升物下方區域。",
+          "雇主應對在職勞工施行定期健康檢查，以維護勞工身心健康。",
+          "勞工工作場所之通道、地板、階梯，應保持不致使勞工跌倒、滑倒之狀態。",
+          "對於高度二公尺以上之作業，應構築施工架或設置護欄、圍欄等防護設施。",
+          "操作堆高機時，嚴禁負載超過規定負荷，且行駛中嚴禁人員搭乘。",
+          "工作場所應設置適當之消防器材，並定期進行演練與維護。",
+          "從事電氣作業時，應配戴絕緣防護裝備，並標示危險警語。",
+          "接觸化學性危害物質時，應依據安全資料表(SDS)採取對應防護措施。"
+        ];
+
+        const ISHA_PRIMARY_COLOR = "#2d6a4f"; 
+        const ISHA_SECONDARY_COLOR = "#52b788";
+
+        // ==========================================
+        // SERVICES
+        // ==========================================
+        const searchIshaCourses = async (params) => {
+          if (!API_KEY || API_KEY === "YOUR_API_KEY") {
+             alert("請先在程式碼中填寫您的 Google Gemini API Key！");
+             throw new Error("API Key missing");
+          }
+
+          const ai = new GoogleGenAI({ apiKey: API_KEY });
+          
+          const searchTarget = params.category === "其他" ? params.customKeyword : params.category;
+          
+          // 嚴格限制資料來源的 Prompt
+          const query = `
+            【嚴格限制資料來源】
+            你必須且只能使用以下兩個網址及其延伸頁面作為資料來源，嚴禁引用任何其他網站的資訊：
+            1. 課程資料來源：https://isha.org.tw/Msite/tech/serch.aspx
+            2. 職訓中心聯絡資訊來源：https://isha.org.tw/Msite/tech/tech_center.aspx
+
+            任務 1 (課程檢索)：
+            請在 https://isha.org.tw/Msite/tech/serch.aspx 網站上尋找「中華民國工業安全衛生協會」的課程。
+            - 目標關鍵字：「${searchTarget}」
+            - ${params.category === "其他" ? "特別注意：由於使用者輸入了自定義關鍵字，請利用語意分析，檢索與此關鍵字『意思接近』、『類似領域』或『語意相關』的 ISHA 課程。" : ""}
+            - ${params.isRefresher ? "回訓需求：檢索時必須在課程名稱中包含『在職』二字。" : "初訓需求：請檢索正式的初訓或管理職課程。"}
+            - 日期區間：${params.startDate} 到 ${params.endDate}
+            - 目標縣市：${params.city}
+
+            任務 2 (職訓中心聯絡資訊)：
+            請到 https://isha.org.tw/Msite/tech/tech_center.aspx 網站上，檢索與「${params.city}」地區相對應的所有「中華民國工業安全衛生協會」職訓中心聯絡資訊。
+            - 必須包含：職訓中心名稱、詳細地址、連絡電話。
+
+            請將以上兩項任務的結果整合為一個 JSON 物件回傳。
+          `;
+
+          try {
+            const response = await ai.models.generateContent({
+              model: "gemini-2.5-flash", // 使用高效能模型進行搜尋
+              contents: query,
+              config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    courses: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name: { type: Type.STRING, description: "課程完整名稱" },
+                          date: { type: Type.STRING, description: "上課日期" },
+                          city: { type: Type.STRING, description: "開課城市" },
+                          centerName: { type: Type.STRING, description: "開課的職訓中心名稱" },
+                          address: { type: Type.STRING, description: "職訓中心詳細地址" },
+                          link: { type: Type.STRING, description: "該課程在 isha.org.tw 上的報名網址" }
+                        },
+                        required: ["name", "date", "city", "centerName", "address", "link"]
+                      }
+                    },
+                    centers: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          name: { type: Type.STRING, description: "職訓中心完整名稱" },
+                          address: { type: Type.STRING, description: "詳細地址" },
+                          phone: { type: Type.STRING, description: "連絡電話" }
+                        },
+                        required: ["name", "address", "phone"]
+                      },
+                      description: "從 tech_center.aspx 檢索到的該縣市相關職訓中心聯絡方式"
+                    }
+                  },
+                  required: ["courses", "centers"]
+                }
+              },
+            });
+
+            const data = JSON.parse(response.text || '{"courses":[], "centers":[]}');
+            const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+
+            return {
+              courses: (data.courses || []).map((c, index) => ({
+                ...c,
+                id: `course-${index}`,
+                isRefresher: params.isRefresher
+              })),
+              centers: data.centers || [],
+              sources
+            };
+          } catch (error) {
+            console.error("Gemini search failed:", error);
+            throw error;
+          }
+        };
+
+        // ==========================================
+        // COMPONENTS
+        // ==========================================
+        
+        // SafetyFactTicker
+        const SafetyFactTicker = () => {
+          const [index, setIndex] = useState(0);
+          const [fade, setFade] = useState(true);
+
+          useEffect(() => {
+            const interval = setInterval(() => {
+              setFade(false); 
+              setTimeout(() => {
+                setIndex((prevIndex) => (prevIndex + 1) % SAFETY_FACTS.length);
+                setFade(true); 
+              }, 500); 
+            }, 7000); 
+
+            return () => clearInterval(interval);
+          }, []);
+
+          return (
+            <div className="bg-green-50 border-2 border-green-200 rounded-xl p-8 shadow-inner min-h-[160px] flex flex-col items-center justify-center text-center transition-all">
+              <div className="flex items-center gap-2 mb-4 text-green-800 font-bold uppercase tracking-wider text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                </svg>
+                工安法規小知識
+              </div>
+              <p 
+                className={`text-lg md:text-xl text-gray-700 font-medium leading-relaxed transition-opacity duration-500 ${fade ? 'opacity-100' : 'opacity-0'}`}
+                style={{ color: ISHA_PRIMARY_COLOR }}
+              >
+                「 {SAFETY_FACTS[index]} 」
+              </p>
+              <div className="mt-6 flex gap-1">
+                {SAFETY_FACTS.map((_, i) => (
+                  <div 
+                    key={i} 
+                    className={`h-1.5 rounded-full transition-all duration-300 ${i === index ? 'w-6 bg-green-600' : 'w-1.5 bg-green-200'}`}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        };
+
+        // SearchForm
+        const SearchForm = ({ onSearch, isLoading }) => {
+          const [params, setParams] = useState({
+            startDate: new Date().toISOString().split('T')[0],
+            endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+            city: '臺北市',
+            category: COURSE_CATEGORIES[0],
+            customKeyword: '',
+            isRefresher: false
+          });
+
+          const handleSubmit = (e) => {
+            e.preventDefault();
+            onSearch(params);
+          };
+
+          return (
+            <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-lg border-t-4" style={{ borderTopColor: ISHA_PRIMARY_COLOR }}>
+              <h2 className="text-xl font-bold mb-6 text-gray-800 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke={ISHA_PRIMARY_COLOR}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                課程快速檢索
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">開始日期</label>
+                  <input
+                    type="date"
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-green-500 outline-none"
+                    value={params.startDate}
+                    onChange={(e) => setParams({ ...params, startDate: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">結束日期</label>
+                  <input
+                    type="date"
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-green-500 outline-none"
+                    value={params.endDate}
+                    onChange={(e) => setParams({ ...params, endDate: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">想上課的縣市</label>
+                  <select
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-green-500 outline-none"
+                    value={params.city}
+                    onChange={(e) => setParams({ ...params, city: e.target.value })}
+                  >
+                    {CITIES.map(city => (
+                      <option key={city} value={city}>{city}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700">想上什麼課</label>
+                  <select
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-green-500 outline-none"
+                    value={params.category}
+                    onChange={(e) => setParams({ ...params, category: e.target.value })}
+                  >
+                    {COURSE_CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {params.category === '其他' && (
+                <div className="mt-4 space-y-1 animate-fade-in">
+                  <label className="block text-sm font-medium text-gray-700">請輸入課程關鍵字</label>
+                  <input
+                    type="text"
+                    placeholder="例如：施工架、急救、丙業..."
+                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-green-500 outline-none border-green-200"
+                    value={params.customKeyword}
+                    onChange={(e) => setParams({ ...params, customKeyword: e.target.value })}
+                    required
+                  />
+                  <p className="text-[10px] text-gray-500 italic">AI 將協助檢索語意、發音或意思接近的課程。</p>
+                </div>
+              )}
+
+              <div className="mt-4 flex items-center gap-3 bg-green-50 p-3 rounded-md">
+                <input
+                  type="checkbox"
+                  id="refresher"
+                  className="h-5 w-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                  checked={params.isRefresher}
+                  onChange={(e) => setParams({ ...params, isRefresher: e.target.checked })}
+                />
+                <label htmlFor="refresher" className="text-sm font-medium text-gray-700 cursor-pointer select-none">
+                  是否要回訓？ (勾選後將檢索包含「在職」之課程)
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full mt-6 py-3 px-4 rounded-md text-white font-bold text-lg transition-all active:scale-[0.98] disabled:bg-gray-400"
+                style={{ backgroundColor: isLoading ? '#9ca3af' : ISHA_PRIMARY_COLOR }}
+              >
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    AI 檢索中...
+                  </span>
+                ) : '開始搜尋'}
+              </button>
+            </form>
+          );
+        };
+
+        // ResultList
+        const ResultList = ({ courses, centers, sources, searchedCity }) => {
+          const validateLink = (link) => {
+            const fallback = "https://isha.org.tw/Msite/tech/serch.aspx";
+            if (!link) return fallback;
+            
+            try {
+              const url = new URL(link);
+              if (url.hostname.includes('isha.org.tw')) {
+                return link;
+              }
+              return fallback;
+            } catch (e) {
+              if (link.startsWith('/')) {
+                return `https://isha.org.tw${link}`;
+              }
+              return fallback;
+            }
+          };
+
+          if (courses.length === 0) {
+            return (
+              <div className="space-y-6">
+                <div className="bg-white p-12 rounded-xl shadow-md text-center">
+                  <div className="text-6xl mb-4">🔍</div>
+                  <p className="text-gray-500 text-lg">目前沒有找到符合條件的課程，請調整日期或類別再試一次。</p>
+                </div>
+                
+                {centers.length > 0 && (
+                  <div className="bg-green-50 p-6 rounded-xl border border-green-100 animate-fade-in">
+                    <h4 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                      {searchedCity} 地區相關職訓中心 (資料來源：ISHA 官網)
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {centers.map((center, idx) => (
+                        <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-green-50">
+                          <h5 className="font-bold text-gray-900">{center.name}</h5>
+                          <p className="text-sm text-gray-600 mt-1">📍 {center.address}</p>
+                          <p className="text-sm font-medium text-green-700 mt-1">📞 {center.phone}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-6 animate-fade-in">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <h3 className="text-xl font-bold text-gray-800">搜尋結果 ({courses.length})</h3>
+                <div className="bg-emerald-50 text-emerald-800 text-sm py-2 px-4 rounded-lg border border-emerald-100 shadow-sm flex items-start gap-2 max-w-md">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                  </svg>
+                  <p className="leading-snug">
+                    如果連結未能跳轉至對應課程，請直接電洽對應的職訓中心，協會期待您的光臨
+                  </p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {courses.map((course) => {
+                  const validatedLink = validateLink(course.link);
+                  return (
+                    <div 
+                      key={course.id} 
+                      className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow border-l-8"
+                      style={{ borderLeftColor: course.isRefresher ? ISHA_SECONDARY_COLOR : ISHA_PRIMARY_COLOR }}
+                    >
+                      <div className="p-6">
+                        <div className="flex justify-between items-start mb-3">
+                          <span className={`px-2 py-1 rounded text-xs font-bold text-white ${course.isRefresher ? 'bg-emerald-500' : 'bg-green-700'}`}>
+                            {course.isRefresher ? '回訓/在職' : '初訓'}
+                          </span>
+                          <span className="text-gray-500 text-sm font-medium">📅 {course.date}</span>
+                        </div>
+                        
+                        <h4 className="text-lg font-bold text-gray-900 mb-2 leading-tight">
+                          {course.name}
+                        </h4>
+                        
+                        <div className="space-y-2 mb-6">
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 11a1 1 0 11-2 0 1 1 0 012 0zm-1-7a1 1 0 00-1 1v3a1 1 0 002 0V7a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm">{course.centerName}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm">{course.city} - {course.address}</span>
+                          </div>
+                        </div>
+                        
+                        <a 
+                          href={validatedLink} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="block w-full text-center py-2 px-4 rounded-md font-bold text-white transition-colors hover:opacity-90"
+                          style={{ backgroundColor: ISHA_PRIMARY_COLOR }}
+                        >
+                          查看詳情與報名
+                        </a>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {centers.length > 0 && (
+                <div className="mt-8 p-6 bg-green-50 rounded-xl border border-green-100">
+                  <h4 className="text-lg font-bold text-green-900 mb-4 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    您所查詢縣市的職訓中心聯絡資訊 (檢索自官網)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {centers.map((center, idx) => (
+                      <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-green-50">
+                        <h5 className="font-bold text-gray-900">{center.name}</h5>
+                        <p className="text-sm text-gray-600 mt-1">📍 {center.address}</p>
+                        <p className="text-sm font-medium text-green-700 mt-1">📞 {center.phone}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sources.length > 0 && (
+                <div className="mt-8 p-4 bg-gray-100 rounded-lg">
+                  <h4 className="text-sm font-bold text-gray-600 mb-2">資料來源：</h4>
+                  <ul className="text-xs text-green-700 space-y-1">
+                    {sources.map((src, i) => (
+                      <li key={i} className="truncate">
+                        <a href={src.web?.uri} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                          {src.web?.title || src.web?.uri}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        };
+
+        // ==========================================
+        // APP COMPONENT
+        // ==========================================
+        const App = () => {
+          const [courses, setCourses] = useState([]);
+          const [centers, setCenters] = useState([]);
+          const [sources, setSources] = useState([]);
+          const [loading, setLoading] = useState(false);
+          const [hasSearched, setHasSearched] = useState(false);
+          const [error, setError] = useState(null);
+          const [lastSearchedCity, setLastSearchedCity] = useState("");
+
+          const handleSearch = async (params) => {
+            setLoading(true);
+            setError(null);
+            setLastSearchedCity(params.city);
+            try {
+              const result = await searchIshaCourses(params);
+              setCourses(result.courses);
+              setCenters(result.centers);
+              setSources(result.sources);
+              setHasSearched(true);
+            } catch (err) {
+              console.error(err);
+              setError("檢索過程中發生錯誤，請確認網路連線或稍後再試。");
+            } finally {
+              setLoading(false);
+            }
+          };
+
+          return (
+            <div className="min-h-screen pb-12 bg-gray-50">
+              {/* Header */}
+              <header className="bg-white shadow-sm border-b-2 sticky top-0 z-50" style={{ borderBottomColor: ISHA_PRIMARY_COLOR }}>
+                <div className="max-w-6xl mx-auto px-4 h-20 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-green-700 rounded-full flex items-center justify-center text-white font-bold italic text-xl border-2 border-emerald-400 shadow-md">
+                      ISHA
+                    </div>
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-900 leading-tight">中華民國工業安全衛生協會</h1>
+                      <p className="text-xs text-gray-500 font-medium tracking-wide">職訓課程智慧檢索系統 (Green Ed.)</p>
+                    </div>
+                  </div>
+                  <div className="hidden md:block">
+                    <a href="https://isha.org.tw" target="_blank" rel="noopener noreferrer" className="text-sm font-bold hover:underline" style={{ color: ISHA_PRIMARY_COLOR }}>
+                      ISHA 官網
+                    </a>
+                  </div>
+                </div>
+              </header>
+
+              <main className="max-w-6xl mx-auto px-4 mt-8">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* Sidebar */}
+                  <div className="lg:col-span-4">
+                    <div className="sticky top-24">
+                      <SearchForm onSearch={handleSearch} isLoading={loading} />
+                      
+                      <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-200">
+                        <h5 className="text-sm font-bold text-green-800 mb-1 flex items-center gap-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          小撇步
+                        </h5>
+                        <p className="text-xs text-green-700 leading-relaxed">
+                          若您是想要參加複訓，請務必勾選「是否要回訓」，AI 會自動幫您加上「在職」關鍵字進行更精確的檢索。
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Results Area */}
+                  <div className="lg:col-span-8">
+                    {error && (
+                      <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6 flex items-start gap-3 animate-bounce">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mt-0.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000-16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                        {error}
+                      </div>
+                    )}
+
+                    {!hasSearched && !loading && (
+                      <div className="bg-white rounded-xl shadow-md p-12 text-center border-dashed border-2 border-gray-200">
+                        <div className="text-6xl mb-6 opacity-30">🏫</div>
+                        <h3 className="text-xl font-bold text-gray-700 mb-2">準備好開始學習了嗎？</h3>
+                        <p className="text-gray-500">在左側輸入您的需求，我們將為您從 ISHA 官網檢索最新的課程資訊。</p>
+                      </div>
+                    )}
+
+                    {loading ? (
+                      <div className="space-y-8">
+                        {/* Safety Fact Rotation during Loading */}
+                        <SafetyFactTicker />
+                        
+                        {/* Visual Skeleton placeholders below the fact ticker */}
+                        <div className="space-y-6">
+                          {[1, 2].map(i => (
+                            <div key={i} className="animate-pulse bg-white p-6 rounded-xl shadow-sm border-l-8 border-gray-100">
+                              <div className="flex-1 space-y-4 py-1">
+                                <div className="h-4 bg-gray-100 rounded w-1/4"></div>
+                                <div className="h-6 bg-gray-200 rounded w-3/4"></div>
+                                <div className="space-y-2">
+                                  <div className="h-4 bg-gray-100 rounded"></div>
+                                  <div className="h-4 bg-gray-100 rounded w-5/6"></div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      hasSearched && <ResultList courses={courses} centers={centers} sources={sources} searchedCity={lastSearchedCity} />
+                    )}
+                  </div>
+                </div>
+              </main>
+
+              {/* Footer */}
+              <footer className="mt-20 py-12 bg-gray-900 text-gray-400">
+                <div className="max-w-6xl mx-auto px-4 text-center">
+                  <p className="text-sm mb-4 leading-relaxed">本應用程式僅提供搜尋與檢索服務，所有課程資訊以 <a href="https://isha.org.tw" target="_blank" rel="noopener noreferrer" className="text-white hover:underline font-bold">ISHA 中華民國工業安全衛生協會</a> 官網公告為準。</p>
+                  <div className="w-16 h-1 bg-gray-700 mx-auto mb-6"></div>
+                  <p className="text-xs uppercase tracking-widest">© 2024 ISHA Course Finder Helper. Powered by Gemini AI.</p>
+                </div>
+              </footer>
+            </div>
+          );
+        };
+
+        // ==========================================
+        // MOUNT
+        // ==========================================
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(
+          <React.StrictMode>
+            <App />
+          </React.StrictMode>
+        );
+    </script>
+</body>
+</html>
