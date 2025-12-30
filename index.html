@@ -1,94 +1,30 @@
+
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ISHA 課程智慧檢索系統</title>
+    <title>ISHA 課程檢索系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
-        .isha-green { background-color: #2d6a4f; }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f4f7f9;
+        }
     </style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0"
+  }
+}
+</script>
 </head>
 <body>
     <div id="root"></div>
-
-    <script type="text/babel">
-        // 1. 【請務必填寫你的 API Key】
-        const YOUR_API_KEY = "-X7Ucg"; 
-
-        const App = () => {
-            const [city, setCity] = React.useState("臺北市");
-            const [category, setCategory] = React.useState("職業安全衛生管理人員");
-            const [results, setResults] = React.useState([]);
-            const [loading, setLoading] = React.useState(false);
-
-            const handleSearch = async () => {
-                if (YOUR_API_KEY.includes("貼上")) return alert("請先填寫 API Key！");
-                setLoading(true);
-                try {
-                    // 使用 2025 年最穩定的型號網址
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${YOUR_API_KEY}`;
-                    
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [{
-                                    text: `你現在是工安協會助手。請檢索 ISHA (https://isha.org.tw) 官網。條件：城市「${city}」，類別「${category}」。請回傳 JSON 格式的列表陣列，包含：name(課程名稱), date(日期), center(職訓中心), link(報名連結)。`
-                                }]
-                            }]
-                        })
-                    });
-
-                    const data = await response.json();
-                    const aiText = data.candidates[0].content.parts[0].text;
-                    const jsonString = aiText.replace(/```json|```/g, "").trim();
-                    setResults(JSON.parse(jsonString));
-                } catch (err) {
-                    alert("搜尋失敗！請檢查 API Key 權限。");
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-            return (
-                <div className="min-h-screen">
-                    <header className="isha-green text-white p-6 shadow-lg">
-                        <h1 className="text-xl font-bold text-center">ISHA 職訓課程檢索系統</h1>
-                    </header>
-                    <main className="max-w-2xl mx-auto p-6">
-                        <div className="bg-white p-6 rounded-2xl shadow-md mb-6">
-                            <div className="space-y-4">
-                                <select value={city} onChange={(e)=>setCity(e.target.value)} className="w-full p-3 border rounded-xl">
-                                    <option>臺北市</option><option>桃園市</option><option>臺中市</option><option>高雄市</option>
-                                </select>
-                                <button onClick={handleSearch} disabled={loading} className="w-full bg-emerald-700 text-white py-3 rounded-xl font-bold">
-                                    {loading ? "AI 搜尋中..." : "開始智慧檢索"}
-                                </button>
-                            </div>
-                        </div>
-                        <div className="space-y-4">
-                            {results.map((item, i) => (
-                                <div key={i} className="bg-white p-4 rounded-xl border-l-4 border-emerald-600 shadow-sm">
-                                    <h3 className="font-bold">{item.name}</h3>
-                                    <p className="text-sm text-gray-500">{item.date} | {item.center}</p>
-                                    <a href={item.link} target="_blank" className="text-emerald-700 text-sm font-bold mt-2 inline-block">立即報名 →</a>
-                                </div>
-                            ))}
-                        </div>
-                    </main>
-                </div>
-            );
-        };
-
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
 </body>
 </html>
